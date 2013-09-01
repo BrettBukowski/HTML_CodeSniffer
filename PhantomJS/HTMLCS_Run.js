@@ -1,14 +1,17 @@
 var page = require('webpage').create(),
     system = require('system'),
-    address, standard;
+    standards = ['WCAG2A', 'WCAG2AA', 'WCAG2AAA'],
+    address, standard, reportLevel;
 
-if (system.args.length < 3 || system.args.length > 3) {
-    console.log('Usage: phantomjs HTMLCS_Run.js URL standard');
-    console.log('  available standards: "WCAG2A", "WCAG2AA", "WCAG2AAA"');
+if (system.args.length < 3 || system.args.length > 4) {
+    console.log('Usage: phantomjs HTMLCS_Run.js URL standard [report level]');
+    console.log('  standards:     ' + standards.join(', '));
+    console.log('  report levels: ALL, ERRORS_AND_WARNINGS, ERRORS (default)');
     phantom.exit();
 } else {
     address  = system.args[1];
     standard = system.args[2];
+    reportLevel = system.args[3];
     page.open(address, function (status) {
         if (status !== 'success') {
             console.log('Unable to load the address!');
@@ -18,7 +21,8 @@ if (system.args.length < 3 || system.args.length > 3) {
 
                 // Override onConsoleMessage function for outputting.
                 page.onConsoleMessage = function (msg) {
-                    if (msg === 'done') phantom.exit();
+                    if (msg === 'done:pass') phantom.exit(0);
+                    if (msg === 'done:fail') phantom.exit(1);
                     console.log(msg);
                 };
 
@@ -44,23 +48,16 @@ if (system.args.length < 3 || system.args.length > 3) {
                 page.injectJs('../HTMLCS.js');
                 page.injectJs('runner.js');
 
-                // Now Run. Note that page.evaluate() function is sanboxed to
-                // the loaded page's context. We can't pass any variable to it.
-                switch (standard) {
-                    case 'WCAG2A':
-                        page.evaluate(function() {HTMLCS_RUNNER.run('WCAG2A');});
-                    break;
-                    case 'WCAG2AA':
-                        page.evaluate(function() {HTMLCS_RUNNER.run('WCAG2AA');});
-                    break;
-                    case 'WCAG2AAA':
-                        page.evaluate(function() {HTMLCS_RUNNER.run('WCAG2AAA');});
-                    break;
-                    default:
-                        console.log('Unknown standard.');
-                        phantom.exit();
-                    break;
+                if (standards.indexOf(standard) == -1) {
+                    console.log('Unknown standard.');
+                    phantom.exit();
                 }
+                page.evaluate(function(standard, reportLevel) {
+                    if (reportLevel) {
+                        HTMLCS_RUNNER.reportLevel = HTMLCS_RUNNER.reportLevels[reportLevel] || HTMLCS_RUNNER.reportLevels.ALL;
+                    }
+                    HTMLCS_RUNNER.run(standard);
+                }, standard, reportLevel);
             }, 200);
         }//end if
     });//end

@@ -19,15 +19,25 @@ var HTMLCS = new function()
     var _standard     = null;
     var _currentSniff = null;
 
+    var _errors       = 0;
     var _messages     = [];
     var _msgOverrides = {};
+    var _listeners    = {};
 
     /*
         Message type constants.
     */
-    this.ERROR   = 1;
-    this.WARNING = 2;
-    this.NOTICE  = 3;
+    this.ERROR   = 0;
+    this.WARNING = 1;
+    this.NOTICE  = 2;
+    this.PASS    = 3;
+
+    this.MESSAGE_CODES = [
+        'ERROR',
+        'WARNING',
+        'NOTICE',
+        'PASS'
+    ];
 
     /**
      * Loads the specifid standard and run the sniffs.
@@ -109,6 +119,7 @@ var HTMLCS = new function()
 
                 var elements = _getAllTags(element);
                 elements.unshift(element);
+                this.fire('start', elements);
                 _run(elements, element, callback);
             }
 
@@ -140,6 +151,7 @@ var HTMLCS = new function()
 
         callback  = callback || function() {};
         _messages = [];
+        _errors   = 0;
 
         // Get all the elements in the parent element.
         // Add the parent element too, which will trigger "_top" element codes.
@@ -148,6 +160,7 @@ var HTMLCS = new function()
 
         // Run the sniffs.
         if (loadingFrame === false) {
+            this.fire('start', elements);
             _run(elements, element, callback);
         }
     };
@@ -191,15 +204,22 @@ var HTMLCS = new function()
      * @param {Object}  [data]  Extra data to store for the message.
      */
     this.addMessage = function(type, element, msg, code, data) {
-        code = _getMessageCode(code);
 
-        _messages.push({
+        var messageInfo = {
             type: type,
             element: element,
             msg: _msgOverrides[code] || msg,
-            code: code,
+            code: _getMessageCode(code),
             data: data
-        });
+        };
+
+        _messages.push(messageInfo);
+
+        if (type == this.ERROR) {
+            _errors++;
+            this.fire('error', messageInfo);
+        }
+        this.fire('message', messageInfo);
     };
 
     /**
@@ -214,6 +234,19 @@ var HTMLCS = new function()
         return _messages.concat([]);
     };
 
+    this.on = function(eventName, callback) {
+        _listeners[eventName] || (_listeners[eventName] = []);
+        _listeners[eventName].push(callback);
+    };
+
+    this.fire = function(eventName, eventData) {
+        if (!_listeners[eventName]) return;
+
+        for (var i = 0, listeners = _listeners[eventName], len = listeners.length; i < len; i++) {
+            listeners[i](eventData);
+        }
+    };
+
     /**
      * Runs the sniffs in the loaded standard for the specified element.
      *
@@ -224,6 +257,7 @@ var HTMLCS = new function()
     var _run = function(elements, topElement, callback) {
         var topMsgs = [];
         while (elements.length > 0) {
+            var numberOfErrors = _errors;
             var element = elements.shift();
 
             if (element === topElement) {
@@ -251,6 +285,11 @@ var HTMLCS = new function()
                     topMsgs   = _messages;
                     _messages = [];
                 }
+            }
+            if (numberOfErrors == _errors) {
+                // Record the passes. The sniffs themselves
+                // record the errors, warnings, and notices.
+                HTMLCS.addMessage(HTMLCS.PASS, element);
             }
         }//end while
 
